@@ -1,3 +1,4 @@
-# ilp_alloc
+# ilpalloc
 
 Allocate final year projects from student choices
+
