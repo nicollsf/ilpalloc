@@ -13,6 +13,7 @@ to Excel files.
 import sys
 import re
 import random
+import shutil
 
 import numpy as np
 import pandas as pd
@@ -22,7 +23,7 @@ from pulp import (
     LpVariable,
     lpSum,
     LpBinary,
-    PULP_CBC_CMD,
+    HiGHS_CMD,
     value,
 )
 
@@ -178,7 +179,7 @@ def allocate_projects(fname: str) -> None:
             if tm[i, j] <= 0:
                 prob += x[i][j] == 0
 
-    prob.solve(PULP_CBC_CMD(msg=False))
+    prob.solve(HiGHS_CMD(msg=False))
 
     #------------------------------------------------------------------
     # Post-process results and write outputs
