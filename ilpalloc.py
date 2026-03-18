@@ -13,7 +13,6 @@ to Excel files.
 import sys
 import re
 import random
-import shutil
 
 import numpy as np
 import pandas as pd
@@ -23,7 +22,6 @@ from pulp import (
     LpVariable,
     lpSum,
     LpBinary,
-    HiGHS_CMD,
     value,
 )
 
@@ -77,8 +75,12 @@ def allocate_projects(fname: str) -> None:
         else:
             break
 
-    Ms = df_choices.values
-    Ms = np.array([[str(x).strip() if pd.notna(x) else '' for x in row] for row in Ms], dtype=object)
+    print(f"Loaded {len(df_choices)} students with up to {num_choices} choices each.")
+    print(f"Scores loaded for choices: {sorted(scores.keys())}")
+    if len(scores) < num_choices:
+        print(f"Warning: Scores provided for {len(scores)} choices, but {num_choices} choices detected in 'choices' sheet. Assuming score 0 for missing choices.")
+    else:
+        print(f"All {num_choices} choices have scores defined.")
 
     #------------------------------------------------------------------
     # Supervisor codes, self-proposed detection, and project indices
@@ -86,14 +88,17 @@ def allocate_projects(fname: str) -> None:
 
     # Flatten all project codes from choice columns
     all_codes = []
-    for row in Ms:
-        for code in row[1:]:  # skip student ID
-            if code:
-                all_codes.append(code)
+    for col in choice_cols:
+        # Get codes from this column, ignoring NaNs and whitespace
+        codes = df_choices[col].dropna().astype(str).str.strip()
+        all_codes.extend(codes[codes != ''].tolist())
     pcodes = list(dict.fromkeys(all_codes))  # unique, preserve order
 
     # supervisor code is leading uppercase letters of the project code
     scodes = sorted({re.match(r"[A-Z]+", p).group(0) for p in pcodes if re.match(r"[A-Z]+", p)})
+
+    print(f"Detected {len(scodes)} supervisors: {scodes}")
+    print(f"Total unique projects: {len(pcodes)}")
 
     # per-supervisor limits from limits sheet
     slimsn = np.array([default_limit] * len(scodes), dtype=int)
@@ -106,18 +111,22 @@ def allocate_projects(fname: str) -> None:
     spcodes = [p for p, flag in zip(pcodes, spi) if flag]
 
     # boolean index of rows in Ms that are self-proposed (first choice is self-proposed)
-    spsi = np.zeros(Ms.shape[0], dtype=bool)
-    for i, row in enumerate(Ms):
-        if row[1] in spcodes:  # first choice
+    m = len(df_choices)
+    spsi = np.zeros(m, dtype=bool)
+    first_col = choice_cols[0]
+    for i in range(m):
+        val = df_choices.at[i, first_col]
+        code = str(val).strip() if pd.notna(val) else ''
+        if code in spcodes:
             spsi[i] = True
 
     # tchoices: for each student, store the index (into pcodes) of each preference column
-    m = Ms.shape[0]
     n = len(pcodes)
     tchoices = np.full((m, num_choices), -1, dtype=int)
     for i in range(m):
         for j in range(num_choices):
-            code = Ms[i, j + 1]
+            val = df_choices.at[i, choice_cols[j]]
+            code = str(val).strip() if pd.notna(val) else ''
             if code in pcodes:
                 tchoices[i, j] = pcodes.index(code)
 
@@ -179,7 +188,8 @@ def allocate_projects(fname: str) -> None:
             if tm[i, j] <= 0:
                 prob += x[i][j] == 0
 
-    prob.solve(HiGHS_CMD(msg=False))
+    # Solve using default solver (usually CBC)
+    prob.solve()
 
     #------------------------------------------------------------------
     # Post-process results and write outputs
@@ -230,7 +240,7 @@ def allocate_projects(fname: str) -> None:
         else:
             project = "unallocated"
             pref = None
-        outs.append([Ms[i, 0], project, pref])
+        outs.append([df_choices.iloc[i, 0], project, pref])
     outst = pd.DataFrame(outs, columns=["Student", "Project", "Preference"])
 
     # unallocated projects
@@ -242,6 +252,8 @@ def allocate_projects(fname: str) -> None:
     with pd.ExcelWriter(output_fname) as writer:
         outst.to_excel(writer, sheet_name='allocations', index=False)
         unalloc_df.to_excel(writer, sheet_name='unallocated', index=False)
+
+    print(f"Results saved to {output_fname}")
 
 
 if __name__ == "__main__":
