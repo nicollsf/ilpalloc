@@ -220,7 +220,10 @@ def allocate_projects(fname: str) -> None:
     # self-proposed stats
     tt = (tchoices[:, 0] == pass_idx) & spsi & (pass_idx >= 0)
     num_yes = np.sum(tt)
-    print(f"Students assigned self-proposed topic: {num_yes} ({num_yes/np.sum(spsi)*100:.1f}%)")
+    if np.sum(spsi) > 0:
+        print(f"Students assigned self-proposed topic: {num_yes} ({num_yes/np.sum(spsi)*100:.1f}%)")
+    else:
+        print(f"Students assigned self-proposed topic: {num_yes} (0.0%)")
 
     # per-supervisor assignments
     A3x = np.zeros(len(scodes), dtype=int)
